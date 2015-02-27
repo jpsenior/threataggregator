@@ -1,7 +1,7 @@
 __author__ = 'JP Senior'
 import unittest
 from netaddr import IPAddress
-from __init__ import *
+from threataggregator import *
 
 
 class RepDBTest(unittest.TestCase):
