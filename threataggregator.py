@@ -613,11 +613,11 @@ def build_db(type, url, description):
         db_del.append(ipfeed(url, description, compare_delete))
         db_add.append(ipfeed(url, description, compare_add))
         db_equal.append(ipfeed(url, description, compare_equal))
-
-    try:
-        os.remove(old_filename)
-    except IOError as e:
-        raise 'Could not remove file: %s - %s' % (old_filename, e)
+    if os.path.isfile(old_filename):
+        try:
+            os.remove(old_filename)
+        except IOError as e:
+            raise 'Could not remove file: %s - %s' % (old_filename, e)
     try:
         os.rename(new_filename, old_filename)
     except IOError as e:
