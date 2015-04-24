@@ -668,15 +668,18 @@ def process():
     f = open('cache/coords.txt', 'w')
 
     for i in db_add:
+        print "add", i
         msg = buildcef('add', i)
         syslog(msg)
         f.write("%s %s\n" % (i['latitude'], i['longitude']))
 
     for i in db_del:
+        print "delete", i
         msg = buildcef('delete', i)
         syslog(msg)
 
     for i in db_equal:
+        print "update", i
         msg = buildcef('update', i)
         syslog(msg)
         f.write("%s %s\n" % (i['latitude'], i['longitude']))
