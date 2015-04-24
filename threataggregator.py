@@ -40,94 +40,32 @@
 # Correlating these reputation entries agaisnt firewall, web proxy, IPS/IDS, etc logs enables
 # an administrator to drill down into problem areas in their network.
 #
-# Some mechanisms are in place to assist with geolocation of asset information from
+# Some mechanisms are in place to assist with geolocation of asset information 
 # unique IP addresses.
 #
 
-# Set your syslog target here
-host = '172.16.30.210'
-port = 514
-deviceVendor = "Threat Intelligence DB"
-deviceProduct = "ThreatDB"
-deviceHost = "threathost"
+try:
+    import difflib
+    import urllib
+    import re
+    import os
+    import csv
+    import socket
+    import time
+    import datetime
+    import geoip2.database
+    import geoip2.errors
+    import gzip
+    import maxminddb.errors
+    import netaddr
+    import json
+except ImportError as e:
+    print "Error: Please install geoip2 and netaddr packages, or: %s" % e
 
 
-# List of threat feeds to harvest.
-# Most feeds are simple IP lists.
-# for some special feeds, I have a special parser programmed just for those ones.
-feeds = [
+from feeds import feeds
+from config import *
 
-    dict(
-        type='alienvault',
-        url='https://reputation.alienvault.com/reputation.data',
-        source='alienvault.com',
-        description='alienvault'),
-    dict(
-        type='malcode',
-        url='http://malc0de.com/bl/IP_Blacklist.txt',
-        description='malc0de.com IP Blacklist'),
-    dict(
-        type='emerging-compromised',
-        url='http://rules.emergingthreats.net/blockrules/compromised-ips.txt',
-        description='emergingthreats.net Compromised IPs'),
-    dict(
-        type='emerging-block',
-        url='http://rules.emergingthreats.net/fwrules/emerging-Block-IPs.txt',
-        description='emerginghtreats.net Blocked IPs'),
-    dict(
-        type='palveo',
-        url='https://palevotracker.abuse.ch/blocklists.php?download=ipblocklist',
-        description='abuse.ch Palveo Tracker'),
-    dict(
-        type='binarydefense',
-        url='http://www.binarydefense.com/banlist.txt',
-        description='Binary Defense Systems Banlist'),
-    dict(
-        type='ssl-blacklist',
-        url='https://sslbl.abuse.ch/blacklist/sslipblacklist.csv',
-        description='abuse.ch SSL Blacklist'),
-    dict(
-        type='zeus',
-        url='https://zeustracker.abuse.ch/blocklist.php?download=ipblocklist',
-        description='abuse.ch Zeus tracker'),
-    dict(
-        type='nothink-ssh',
-        url='http://www.nothink.org/blacklist/blacklist_ssh_all.txt',
-        description='nothink SSH Blacklist'),
-    dict(
-        type='malwaredomain',
-        url='http://www.malwaredomainlist.com/hostslist/ip.txt',
-        description='malwaredomainlist IP'),
-    dict(
-        type='ciarmy-badguys',
-        url='http://www.ciarmy.com/list/ci-badguys.txt',
-        description='ciarmy IP'),
-    dict(
-        type='autoshun',
-        url='http://autoshun.org/files/shunlist.csv',
-        description='Autoshun list'),
-    dict(
-        type='infiltrated',
-        url='http://www.infiltrated.net/blacklisted',
-        description='Infiltrated.net IP'),
-]
-###
-# ## END OF USER CONFIGURATION ###
-###
-
-import difflib
-import urllib
-import re
-import os
-import csv
-import socket
-import time
-import datetime
-import geoip2.database
-import geoip2.errors
-import gzip
-import maxminddb.errors
-import netaddr
 
 FACILITY = dict(kern=0, user=1, mail=2, daemon=3, auth=4, syslog=5, lpr=6, news=7, uucp=8, cron=9, authpriv=10, ftp=11,
                 local0=16, local1=17, local2=18, local3=19, local4=20, local5=21, local6=22, local7=23)
@@ -151,6 +89,7 @@ class RepDB(list):
     def __init__(self):
         super(RepDB, self).__init__()
         self.entries = []
+#        list.__init__(self)
 
     def add(self, ip, source, description, priority=1, reputation=1, latitude=0.000000, longitude=0.000000, city='',
             country=''):
@@ -193,7 +132,7 @@ class RepDB(list):
                     longitude = 0
             # Close the GeoDB reader
             reader.close()
-
+           
         # Not all IP addresses will be in the Maxmind database
         except geoip2.errors.AddressNotFoundError:
             pass
@@ -228,14 +167,8 @@ class RepDB(list):
         :return:
         """
         for e in self.entries:
+            print "Entry:",e
             yield e
-
-    def __len__(self):
-        """ Returns size of entries for list iteration
-
-        :return: Count of entries
-        """
-        return len(self.entries)
 
     def __getitem__(self, item):
         """
@@ -243,6 +176,8 @@ class RepDB(list):
         :return: Returns selected item slice
         """
         return self.entries[item]
+    def __len__(self):
+        return len(self.entries)
 
     # Allows you to search the reputation database on a destination IP address
     # If found, returns a list of RepDB entries containing information about IP.
@@ -255,7 +190,7 @@ class RepDB(list):
         :return: Returns a list of results, or False if no results
         """
         results = []
-        for entry in self.entries:
+        for entry in self:
             if netaddr.IPNetwork(ip).network in netaddr.IPNetwork(entry['ip']):
                 if top:
                     results.append(entry)
@@ -347,7 +282,6 @@ class BuildCompare:
         """
         return self.equal
 
-
 def syslog(message):
     """ Send a UDP syslog packet
 
@@ -435,20 +369,18 @@ def emergingthreat(url, data):
     """
     repdb = RepDB()
     re_section = r'^#(.*)'
-    type = ''
+    iptype = ''
     for line in data:
         typematch = re.match(re_section, line)
         ipmatch = re.match(re_ipcidr, line)
         if typematch:
             # Get rid of extra whitespace. Match group '1'.
-            type = ' '.join(typematch.group(1).split())
+            iptype = ' '.join(typematch.group(1).split())
         elif ipmatch:
             # Spamhaus are too big and too annoying.  They break RepDB later when we parse out CIDR
-            if type != 'Spamhaus DROP Nets':
-                ipmatch = re.match(re_ipcidr, line)
-                if ipmatch:
-                    ip = ipmatch.group(0)
-                    repdb.add(ip, url, type)
+            if iptype != 'Spamhaus DROP Nets':
+                ip = ipmatch.group(0)
+                repdb.add(ip, url, iptype)
     return repdb
 
 
@@ -556,7 +488,7 @@ def alienvault(url, data):
     return repdb
 
 
-def build_db(type, url, description):
+def build_db(type, url, description, db_add, db_del, db_equal):
     """ Builds reputation database entry based on type
     Assumes default type 'ipfeed'
 
@@ -587,11 +519,13 @@ def build_db(type, url, description):
             compare_delete = fn.read().splitlines()
     else:
         compare_delete = []
+    print "Comparing %d downloaded to %d cached lines" % ( len(compare_add), len(compare_delete) )
 
     compare = BuildCompare(compare_delete, compare_add)
     compare_delete = compare.delete
     compare_add = compare.add
     compare_equal = compare.equal
+    print "%d new, %d deleted, %d unchanged lines" % ( len(compare_add), len(compare_delete), len(compare_equal))
 
     if type == 'alienvault':
         db_del.append(alienvault(url, compare_delete))
@@ -601,6 +535,7 @@ def build_db(type, url, description):
         db_del.append(emergingthreat(url, compare_delete))
         db_add.append(emergingthreat(url, compare_add))
         db_equal.append(emergingthreat(url, compare_equal))
+        
     elif type == 'ssl-blacklist':
         db_del.append(sslblacklist(url, compare_delete))
         db_add.append(sslblacklist(url, compare_add))
@@ -613,16 +548,42 @@ def build_db(type, url, description):
         db_del.append(ipfeed(url, description, compare_delete))
         db_add.append(ipfeed(url, description, compare_add))
         db_equal.append(ipfeed(url, description, compare_equal))
+
+    if not os.path.exists('cache'):
+        os.makedirs('cache')
+
     if os.path.isfile(old_filename):
         try:
             os.remove(old_filename)
-        except IOError as e:
+        except (IOError, OSError) as e:
             raise 'Could not remove file: %s - %s' % (old_filename, e)
     try:
         os.rename(new_filename, old_filename)
-    except IOError as e:
-        raise 'Could not rename %s to %s - %s' % (old_filename, new_filename, e)
+    except (IOError, OSError) as e:
+        raise 'Could not rename %s to %s - %s' % (new_filename, old_filename, e)
 
+
+def printjson(action, entry):
+    """ Prints a JSON-formatted object for an action and entry
+   
+    :param string action:  add remove or delete
+    :param RepDB entry: One RepDB entry to print JSON output for
+    :return: null
+    """
+    outjson = json.dumps({
+	action : {
+        	'ip': str(entry['ip']),
+        	'source' : entry['source'],
+        	'description' : entry['description'],
+        	'priority' : entry['priority'],
+        	'reputation' : entry['reputation'],
+       		'city' : entry['city'],
+        	'country' : entry['country'],
+        	'latitude' : entry['latitude'],
+        	'longitude' : entry['longitude'],
+    	}
+    })
+    print outjson
 
 def buildcef(action, entry):
     """ Builds a CEF-formatted string based on reputation entry from RepDB
@@ -655,44 +616,51 @@ def buildcef(action, entry):
 
 def start(feedlist):
     """ Begins scraping URLs and building reputation DB entities.
-
+    :param repDB db_add: RepDB entry to show added items
+    :param repDB db_del: RepDB entry to show deleted items
+    :param repDB db_equal: RepDB entry to show unchanged values
     :param feedlist: list of dictionary elements containing type, url, description
     :return:
     """
     for i in feedlist:
-        build_db(i['type'], i['url'], i['description'])
-
+        print "Processing %s from %s" % (i['description'],i['url'])
+        build_db(i['type'], i['url'], i['description'], db_add, db_del, db_equal)
 
 def process():
+    """ Processes RepDB entries in order for syslog, stdout, csv file, etc
+
+    :param repDB db_add: RepDB entry to show added items
+    :param repDB db_del: RepDB entry to show deleted items
+    :param repDB db_equal: RepDB entry to show unchanged values
+    """
+
     # fun toy for heatmaps later
     f = open('cache/coords.txt', 'w')
-
-    for i in db_add:
-        print "add", i
+    for i in db_add[0]:
         msg = buildcef('add', i)
         syslog(msg)
+        printjson('add', i)
         f.write("%s %s\n" % (i['latitude'], i['longitude']))
 
-    for i in db_del:
-        print "delete", i
+    for i in db_del[0]:
         msg = buildcef('delete', i)
+        printjson('delete', i)
         syslog(msg)
-
-    for i in db_equal:
-        print "update", i
+    for i in db_equal[0]:
         msg = buildcef('update', i)
         syslog(msg)
+        printjson('update', i)
         f.write("%s %s\n" % (i['latitude'], i['longitude']))
-    f.close()
 
-    print "Sent %d New, %d deleted, and %d unchanged entries" % (len(db_add), len(db_del), len(db_equal))
+    f.close()
+    print "Sent %d New, %d deleted, and %d unchanged entries" % (len(db_add[0]), len(db_del[0]), len(db_equal[0]))
 
 # Only run code if invoked directly: This allows a user to import modules without having to run through everything
 if __name__ == "__main__":
 
-    db_add = RepDB()
-    db_del = RepDB()
-    db_equal = RepDB()
+    db_add = []
+    db_del = []
+    db_equal = []
 
     start(feeds)
     process()
