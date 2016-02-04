@@ -46,7 +46,6 @@
 
 import sys
 import difflib
-import urllib.request
 import re
 import os
 import csv
@@ -59,6 +58,7 @@ import gzip
 import maxminddb.errors
 import netaddr
 import json
+import requests
 
 from feeds import feeds
 from config import *
@@ -75,6 +75,19 @@ re_ipcidr = (r'^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.)'
 
 if not re.match(re_ipcidr, host):
     raise Exception(ValueError, "Syslog host %s is not valid" % host)
+
+
+def download_file(url, filename):
+    """ 
+    :param url: URL of file to download
+    :param filename: Filename to write the result object to
+    :return: 
+    """
+    r = requests.get(url, stream=True)
+
+    with open(filename, 'wb') as fd:
+        for chunk in r.iter_content(1024):
+            fd.write(chunk)
 
 
 class RepDB(list):
@@ -300,8 +313,8 @@ def get_geo_db():
 
         try:
             print("Maxmind database not cached. Attempting to pull from {}".format(url))
-            urllib.request.urlretrieve(url, gzipfile)
-        except urllib.request.URLError:
+            download_file(url, gzipfile)
+        except requests.exceptions.HTTPError:
             e = sys.exc_info()[0]
             print('Connection interrupted while downloading Maxmind Database: {0} - {1}'.format(url, e))
         except IOError:
@@ -489,8 +502,8 @@ def build_db(dbtype, url, description, db_add, db_del, db_equal):
         os.makedirs('cache')
 
     try:
-        urllib.request.urlretrieve(url, new_filename)
-    except urllib.request.URLError as e:
+        download_file(url, new_filename)
+    except requests.exceptions.HTTPError as e:
         print('Connection interrupted while downloading: {0} - {1}'.format(url, e))
         # If there's a problem just keep going.
         return
