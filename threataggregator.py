@@ -63,7 +63,6 @@ import json
 from feeds import feeds
 from config import *
 
-
 FACILITY = dict(kern=0, user=1, mail=2, daemon=3, auth=4, syslog=5, lpr=6, news=7, uucp=8, cron=9, authpriv=10, ftp=11,
                 local0=16, local1=17, local2=18, local3=19, local4=20, local5=21, local6=22, local7=23)
 
@@ -86,7 +85,6 @@ class RepDB(list):
     def __init__(self):
         super(RepDB, self).__init__()
         self.entries = []
-#        list.__init__(self)
 
     def add(self, ip, source, description, priority=1, reputation=1, latitude=0.000000, longitude=0.000000, city='',
             country=''):
@@ -111,7 +109,7 @@ class RepDB(list):
         try:
             reader = get_geo_db()
 
-            # use netaddr to convert CIDR to a network ID, allowing us to extract cities properly.
+            # Use netaddr to convert CIDR to a network ID, allowing us to extract cities properly.
             response = reader.city(netaddr.IPNetwork(ip).network)
             if not city:
                 city = response.city.name
@@ -129,7 +127,7 @@ class RepDB(list):
                     longitude = 0
             # Close the GeoDB reader
             reader.close()
-           
+
         # Not all IP addresses will be in the Maxmind database
         except geoip2.errors.AddressNotFoundError:
             pass
@@ -196,24 +194,6 @@ class RepDB(list):
         # list of results
         return results
 
-    # Deletes all entries that match wildcards for filtering
-    def delete(self, **kwargs):
-        """
-        :param dict kwargs: A list of key-value pairs to search for
-        :return: Deletes entry
-        """
-        for entry in self.entries:
-            if all(getattr(entry, key) == value for key, value in kwargs.iteritems()):
-                return entry
-
-    def filter_nodes(self, **kwargs):
-        """
-        :param dict kwargs: A list of key-value pairs to search for
-        :return: Deletes entry
-        """
-        return [n for n in self.entries
-                if all(getattr(n, k) == v for k, v in kwargs.iteritems())]
-
 
 class BuildCompare:
     """ Uses difflib.SequenceMatcher to compare list 'a' and list 'b' and return results accordingly
@@ -278,6 +258,7 @@ class BuildCompare:
         :return:Returns a list of unchanged items
         """
         return self.equal
+
 
 def syslog(message):
     """ Send a UDP syslog packet
@@ -488,19 +469,21 @@ def alienvault(url, data):
     return repdb
 
 
-def build_db(type, url, description, db_add, db_del, db_equal):
+def build_db(dbtype, url, description, db_add, db_del, db_equal):
     """ Builds reputation database entry based on type
     Assumes default type 'ipfeed'
 
-
-    :param string type: User-specified 'type' for feed name. Constructs filename
+    :param string dbtype: User-specified 'type' for feed name. Constructs filename
     :param string url: URLLib http GET url to obtain threat entries
     :param string description: User description of threat feed
+    :param db_add: Entry database for 'new' items
+    :param db_del Entry database for 'new' items
+    :param db_equal: Entry database for 'new' items
     :return:
     """
 
-    old_filename = 'cache/%s.txt' % type
-    new_filename = 'cache/%s.txt.compare_add' % type
+    old_filename = 'cache/%s.txt' % dbtype
+    new_filename = 'cache/%s.txt.compare_add' % dbtype
 
     if not os.path.exists('cache'):
         os.makedirs('cache')
@@ -528,29 +511,29 @@ def build_db(type, url, description, db_add, db_del, db_equal):
             compare_delete = fn.read().splitlines()
     else:
         compare_delete = []
-    print('Comparing {0} downloaded to {1} cached lines'.format(len(compare_add), len(compare_delete) ))
+    print('Comparing {0} downloaded to {1} cached lines'.format(len(compare_add), len(compare_delete)))
 
     compare = BuildCompare(compare_delete, compare_add)
     compare_delete = compare.delete
     compare_add = compare.add
     compare_equal = compare.equal
     print("{0} new, {1} deleted, {2} unchanged lines".format(len(compare_add), len(compare_delete),
-                                                              len(compare_equal)))
+                                                             len(compare_equal)))
 
-    if type == 'alienvault':
+    if dbtype == 'alienvault':
         db_del.append(alienvault(url, compare_delete))
         db_add.append(alienvault(url, compare_add))
         db_equal.append(alienvault(url, compare_equal))
-    elif type == 'emerging-block':
+    elif dbtype == 'emerging-block':
         db_del.append(emergingthreat(url, compare_delete))
         db_add.append(emergingthreat(url, compare_add))
         db_equal.append(emergingthreat(url, compare_equal))
-        
-    elif type == 'ssl-blacklist':
+
+    elif dbtype == 'ssl-blacklist':
         db_del.append(sslblacklist(url, compare_delete))
         db_add.append(sslblacklist(url, compare_add))
         db_equal.append(sslblacklist(url, compare_equal))
-    elif type == 'ssl-blacklist':
+    elif dbtype == 'ssl-blacklist':
         db_del.append(autoshun(url, compare_delete))
         db_add.append(autoshun(url, compare_add))
         db_equal.append(autoshun(url, compare_equal))
@@ -577,29 +560,30 @@ def printjson(action, entry):
     """ Prints a JSON-formatted object for an action and entry
    
     :param string action:  add remove or delete
-    :param RepDB entry: One RepDB entry to print JSON output for
+    :param entry: One RepDB entry to print JSON output for
     :return: null
     """
     outjson = json.dumps({
         action: {
-        'ip': str(entry['ip']),
-        'source' : entry['source'],
-        'description' : entry['description'],
-        'priority' : entry['priority'],
-        'reputation' : entry['reputation'],
-        'city' : entry['city'],
-        'country' : entry['country'],
-        'latitude' : entry['latitude'],
-        'longitude' : entry['longitude'],
+            'ip': str(entry['ip']),
+            'source': entry['source'],
+            'description': entry['description'],
+            'priority': entry['priority'],
+            'reputation': entry['reputation'],
+            'city': entry['city'],
+            'country': entry['country'],
+            'latitude': entry['latitude'],
+            'longitude': entry['longitude'],
         }
     })
     print(outjson)
+
 
 def buildcef(action, entry):
     """ Builds a CEF-formatted string based on reputation entry from RepDB
 
     :param string action:  add remove or delete
-    :param RepDB entry: One RepDB entry to parse
+    :param entry: One RepDB entry to parse
     :return: Returns a CEF-formatted string with timestamp
     """
     ip = entry['ip']
@@ -617,26 +601,27 @@ def buildcef(action, entry):
             'cs1Label=Source cs1=%s cs2Label=City cs2=%s cs3Label=Country cs3=%s '
             'cfp1Label=Latitude cfp1=%.8f cfp2Label=Longitude cfp2=%.8f cfp3Label=Priority '
             'cfp3=%d cfp4Label=Reputation cfp4=%d') % (
-        timestamp, deviceHost, deviceVendor, deviceProduct, action, action, description, ip,
-        source, city, country,
-        latitude, longitude,
-        priority, reputation
-    )
+               timestamp, deviceHost, deviceVendor, deviceProduct, action, action, description, ip,
+               source, city, country,
+               latitude, longitude,
+               priority, reputation
+           )
 
 
-def start(feedlist):
+def start(feedlist, db_add, db_del, db_equal):
     """ Begins scraping URLs and building reputation DB entities.
-    :param repDB db_add: RepDB entry to show added items
-    :param repDB db_del: RepDB entry to show deleted items
-    :param repDB db_equal: RepDB entry to show unchanged values
     :param feedlist: list of dictionary elements containing type, url, description
+    :param db_add: RepDB of new entries
+    :param db_del: RepDB of removed entries
+    :param db_equal: RepDB of unchanged entries (updated)
     :return:
     """
     for i in feedlist:
-        print("Processing {0} from {1}".format(i['description'],i['url']))
+        print("Processing {0} from {1}".format(i['description'], i['url']))
         build_db(i['type'], i['url'], i['description'], db_add, db_del, db_equal)
 
-def process():
+
+def process(db_add, db_del, db_equal):
     """ Processes RepDB entries in order for syslog, stdout, csv file, etc
 
     :param repDB db_add: RepDB entry to show added items
@@ -668,14 +653,15 @@ def process():
             f.write("%s %s\n" % (i['latitude'], i['longitude']))
 
     f.close()
-    print("Sent {0} New, {1} deleted, and {2} unchanged entries".format(len(db_add[0]), len(db_del[0]), len(db_equal[0])))
+    print(
+        "Sent {0} New, {1} deleted, and {2} unchanged entries".format(len(db_add[0]), len(db_del[0]), len(db_equal[0])))
+
 
 # Only run code if invoked directly: This allows a user to import modules without having to run through everything
 if __name__ == "__main__":
+    _db_add = []
+    _db_del = []
+    _db_equal = []
 
-    db_add = []
-    db_del = []
-    db_equal = []
-
-    start(feeds)
-    process()
+    start(feeds, _db_add, _db_del, _db_equal)
+    process(_db_add, _db_del, _db_equal)
