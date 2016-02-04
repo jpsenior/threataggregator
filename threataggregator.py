@@ -44,24 +44,21 @@
 # unique IP addresses.
 #
 
-try:
-    import difflib
-    import urllib
-    import re
-    import os
-    import csv
-    import socket
-    import time
-    import datetime
-    import geoip2.database
-    import geoip2.errors
-    import gzip
-    import maxminddb.errors
-    import netaddr
-    import json
-except ImportError as e:
-    print "Error: Please install geoip2 and netaddr packages, or: %s" % e
-
+import sys
+import difflib
+import urllib.request
+import re
+import os
+import csv
+import socket
+import time
+import datetime
+import geoip2.database
+import geoip2.errors
+import gzip
+import maxminddb.errors
+import netaddr
+import json
 
 from feeds import feeds
 from config import *
@@ -167,7 +164,7 @@ class RepDB(list):
         :return:
         """
         for e in self.entries:
-            print "Entry:",e
+            print("Entry: {}".format(e))
             yield e
 
     def __getitem__(self, item):
@@ -176,14 +173,14 @@ class RepDB(list):
         :return: Returns selected item slice
         """
         return self.entries[item]
+
     def __len__(self):
         return len(self.entries)
 
-    # Allows you to search the reputation database on a destination IP address
-    # If found, returns a list of RepDB entries containing information about IP.
-    # Specifying top=true only returns the first entry
     def search(self, ip, top=False):
-        """
+        """ Allows you to search the reputation database on a destination IP address
+            If found, returns a list of RepDB entries containing information about IP.
+            Specifying top=true only returns the first entry
 
         :param ip: IP to search RepDB for
         :param BOOL top: Returns the 'first' entry if true or 'all' matching entries if false
@@ -294,7 +291,7 @@ def syslog(message):
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     # We have to encode as UTF8 for non-ascii characters.
     data = '<%d>%s' % (level + facility * 8, message.encode('utf-8'))
-    s.sendto(data, (host, port))
+    s.sendto(data.encode(), (host, port))
     s.close()
 
 
@@ -304,6 +301,7 @@ def get_geo_db():
 
     :return: geoip2.database.Reader object
     """
+
     # Pull everything off the internet if it isn't cached
     geofilename = 'cache/GeoLite2-City.mmdb'
     url = 'http://geolite.maxmind.com/download/geoip/database/GeoLite2-City.mmdb.gz'
@@ -320,12 +318,14 @@ def get_geo_db():
     else:
 
         try:
-            print "Maxmind database not cached. Attempting to pull from %s" % url
-            urllib.urlretrieve(url, gzipfile)
-        except urllib.ContentTooShortError as e:
-            print 'Connection interrupted while downloading Maxmind Database: %s - %s' % (url, e)
-        except IOError as e:
-            print 'Error downloading Maxmind Database: %s - %s' % (url, e)
+            print("Maxmind database not cached. Attempting to pull from {}".format(url))
+            urllib.request.urlretrieve(url, gzipfile)
+        except urllib.request.URLError:
+            e = sys.exc_info()[0]
+            print('Connection interrupted while downloading Maxmind Database: {0} - {1}'.format(url, e))
+        except IOError:
+            e = sys.exc_info()[0]
+            print('Error downloading Maxmind Database: %s - %s'.format(url, e))
 
         # Open Gzip
         f = gzip.open(gzipfile, 'rb')
@@ -501,12 +501,21 @@ def build_db(type, url, description, db_add, db_del, db_equal):
 
     old_filename = 'cache/%s.txt' % type
     new_filename = 'cache/%s.txt.compare_add' % type
+
+    if not os.path.exists('cache'):
+        os.makedirs('cache')
+
     try:
-        urllib.urlretrieve(url, new_filename)
-    except urllib.ContentTooShortError as e:
-        print 'Connection interrupted while downloading: %s - %s' % (url, e)
-    except IOError as e:
-        print 'Error downloading: %s - %s' % (url, e)
+        urllib.request.urlretrieve(url, new_filename)
+    except urllib.request.URLError as e:
+        print('Connection interrupted while downloading: {0} - {1}'.format(url, e))
+        # If there's a problem just keep going.
+        return
+
+    except IOError:
+        e = sys.exc_info()[0]
+        print('Error downloading: {0} - {1}'.format(url, e))
+        raise IOError('Something happened {0}'.format(e))
 
     if os.path.isfile(new_filename):
         with open(new_filename, 'r') as fn:
@@ -519,13 +528,14 @@ def build_db(type, url, description, db_add, db_del, db_equal):
             compare_delete = fn.read().splitlines()
     else:
         compare_delete = []
-    print "Comparing %d downloaded to %d cached lines" % ( len(compare_add), len(compare_delete) )
+    print('Comparing {0} downloaded to {1} cached lines'.format(len(compare_add), len(compare_delete) ))
 
     compare = BuildCompare(compare_delete, compare_add)
     compare_delete = compare.delete
     compare_add = compare.add
     compare_equal = compare.equal
-    print "%d new, %d deleted, %d unchanged lines" % ( len(compare_add), len(compare_delete), len(compare_equal))
+    print("{0} new, {1} deleted, {2} unchanged lines".format(len(compare_add), len(compare_delete),
+                                                              len(compare_equal)))
 
     if type == 'alienvault':
         db_del.append(alienvault(url, compare_delete))
@@ -556,11 +566,11 @@ def build_db(type, url, description, db_add, db_del, db_equal):
         try:
             os.remove(old_filename)
         except (IOError, OSError) as e:
-            raise 'Could not remove file: %s - %s' % (old_filename, e)
+            raise OSError('Could not remove file: {0}- {1}'.format(old_filename, e))
     try:
         os.rename(new_filename, old_filename)
     except (IOError, OSError) as e:
-        raise 'Could not rename %s to %s - %s' % (new_filename, old_filename, e)
+        raise OSError('Could not rename {0} to {1} - {2}'.format(new_filename, old_filename, e))
 
 
 def printjson(action, entry):
@@ -571,19 +581,19 @@ def printjson(action, entry):
     :return: null
     """
     outjson = json.dumps({
-	action : {
-        	'ip': str(entry['ip']),
-        	'source' : entry['source'],
-        	'description' : entry['description'],
-        	'priority' : entry['priority'],
-        	'reputation' : entry['reputation'],
-       		'city' : entry['city'],
-        	'country' : entry['country'],
-        	'latitude' : entry['latitude'],
-        	'longitude' : entry['longitude'],
-    	}
+        action: {
+        'ip': str(entry['ip']),
+        'source' : entry['source'],
+        'description' : entry['description'],
+        'priority' : entry['priority'],
+        'reputation' : entry['reputation'],
+        'city' : entry['city'],
+        'country' : entry['country'],
+        'latitude' : entry['latitude'],
+        'longitude' : entry['longitude'],
+        }
     })
-    print outjson
+    print(outjson)
 
 def buildcef(action, entry):
     """ Builds a CEF-formatted string based on reputation entry from RepDB
@@ -623,7 +633,7 @@ def start(feedlist):
     :return:
     """
     for i in feedlist:
-        print "Processing %s from %s" % (i['description'],i['url'])
+        print("Processing {0} from {1}".format(i['description'],i['url']))
         build_db(i['type'], i['url'], i['description'], db_add, db_del, db_equal)
 
 def process():
@@ -636,24 +646,29 @@ def process():
 
     # fun toy for heatmaps later
     f = open('cache/coords.txt', 'w')
-    for i in db_add[0]:
-        msg = buildcef('add', i)
-        syslog(msg)
-        printjson('add', i)
-        f.write("%s %s\n" % (i['latitude'], i['longitude']))
 
-    for i in db_del[0]:
-        msg = buildcef('delete', i)
-        printjson('delete', i)
-        syslog(msg)
-    for i in db_equal[0]:
-        msg = buildcef('update', i)
-        syslog(msg)
-        printjson('update', i)
-        f.write("%s %s\n" % (i['latitude'], i['longitude']))
+    for line in db_add:
+        for i in line:
+            msg = buildcef('add', i)
+            syslog(msg)
+            printjson('add', i)
+            f.write("%s %s\n" % (i['latitude'], i['longitude']))
+
+    for line in db_del:
+        for i in line:
+            msg = buildcef('delete', i)
+            printjson('delete', i)
+            syslog(msg)
+
+    for line in db_equal:
+        for i in line:
+            msg = buildcef('update', i)
+            syslog(msg)
+            printjson('update', i)
+            f.write("%s %s\n" % (i['latitude'], i['longitude']))
 
     f.close()
-    print "Sent %d New, %d deleted, and %d unchanged entries" % (len(db_add[0]), len(db_del[0]), len(db_equal[0]))
+    print("Sent {0} New, {1} deleted, and {2} unchanged entries".format(len(db_add[0]), len(db_del[0]), len(db_equal[0])))
 
 # Only run code if invoked directly: This allows a user to import modules without having to run through everything
 if __name__ == "__main__":
