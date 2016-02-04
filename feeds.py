@@ -75,8 +75,8 @@ feeds = [
         type='autoshun',
         url='http://autoshun.org/files/shunlist.csv',
         description='Autoshun list'),
-    dict(
-        type='infiltrated',
-        url='http://www.infiltrated.net/blacklisted',
-        description='Infiltrated.net IP'),
+    #dict(
+    #   type='infiltrated',
+    #    url='http://www.infiltrated.net/blacklisted',
+    #    description='Infiltrated.net IP'),
 ]
