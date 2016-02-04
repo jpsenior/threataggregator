@@ -603,9 +603,9 @@ def buildcef(action, entry):
     longitude = entry['longitude']
 
     timestamp = datetime.datetime.fromtimestamp(time.time()).strftime('%b %d %Y %H:%M:%S')
-    return ('%s %s CEF:0|%s|%s|1.0|100|Threat Entry %s|1|act=%s reason=%s src=%s'
-            'cs1Label=Source cs1=%s cs2Label=City cs2=%s cs3Label=Country cs3=%s'
-            'cfp1Label=Latitude cfp1=%.8f cfp2Label=Longitude cfp2=%.8f cfp3Label=Priority'
+    return ('%s %s CEF:0|%s|%s|1.0|100|Threat Entry %s|1|act=%s reason=%s src=%s '
+            'cs1Label=Source cs1=%s cs2Label=City cs2=%s cs3Label=Country cs3=%s '
+            'cfp1Label=Latitude cfp1=%.8f cfp2Label=Longitude cfp2=%.8f cfp3Label=Priority '
             'cfp3=%d cfp4Label=Reputation cfp4=%d') % (
         timestamp, deviceHost, deviceVendor, deviceProduct, action, action, description, ip,
         source, city, country,
