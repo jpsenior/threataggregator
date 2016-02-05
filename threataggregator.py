@@ -3,7 +3,7 @@
 #
 # The MIT License (MIT)
 #
-# Copyright (c) 2015 JP Senior jp.senior@gmail.com
+# Copyright (c) 2016 JP Senior jp.senior@gmail.com
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -61,7 +61,7 @@ import json
 import requests
 
 from feeds import feeds
-from config import *
+import config
 
 FACILITY = dict(kern=0, user=1, mail=2, daemon=3, auth=4, syslog=5, lpr=6, news=7, uucp=8, cron=9, authpriv=10, ftp=11,
                 local0=16, local1=17, local2=18, local3=19, local4=20, local5=21, local6=22, local7=23)
@@ -73,17 +73,17 @@ re_ipcidr = (r'^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.)'
              '{3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])'
              '((/([0-9]|[1-2][0-9]|3[0-2]){0,2})?)')
 
-if not re.match(re_ipcidr, host):
-    raise Exception(ValueError, "Syslog host %s is not valid" % host)
+if not re.match(re_ipcidr, config.host):
+    raise Exception(ValueError, "Syslog host %s is not valid" % config.host)
 
 
 def download_file(url, filename):
-    """ 
+    """
     :param url: URL of file to download
     :param filename: Filename to write the result object to
-    :return: 
+    :return:
     """
-    r = requests.get(url, stream=True)
+    r = requests.get(url, stream=True, proxies=config.proxies, verify=config.verifySSL)
 
     with open(filename, 'wb') as fd:
         for chunk in r.iter_content(1024):
@@ -175,7 +175,7 @@ class RepDB(list):
         :return:
         """
         for e in self.entries:
-            print("Entry: {}".format(e))
+            # print("Entry: {}".format(e))
             yield e
 
     def __getitem__(self, item):
@@ -231,15 +231,18 @@ class BuildCompare:
         self.equal = []
         s = difflib.SequenceMatcher(None, old, new)
         for tag, i1, i2, j1, j2 in s.get_opcodes():
+
             # This helps to understand what we're adding and removing. From difflib documentation
-            # DEBUG print ("%7s a[%d:%d] (%s) b[%d:%d] (%s)" % (tag, i1, i2, old[i1:i2], j1, j2, new[j1:j2]))
+            if config.debug:
+                print("%7s a[%d:%d] (%s) b[%d:%d] (%s)" % (tag, i1, i2, old[i1:i2], j1, j2, new[j1:j2]))
+
             # replace takes out items from list A[i1:i2] and adds from list B[j1:j2]
             if tag == 'replace':
                 for i in old[i1:i2]:
                     self.delete.append(i)
                 for i in new[j1:j2]:
                     self.add.append(i)
-                    # delete records are not seen in list b. Remove items from list a[i1:i2]
+            # delete records are not seen in list b. Remove items from list a[i1:i2]
             elif tag == 'delete':
                 for i in old[i1:i2]:
                     self.delete.append(i)
@@ -285,7 +288,7 @@ def syslog(message):
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     # We have to encode as UTF8 for non-ascii characters.
     data = '<%d>%s' % (level + facility * 8, message.encode('utf-8'))
-    s.sendto(data.encode(), (host, port))
+    s.sendto(data.encode(), (config.host, config.port))
     s.close()
 
 
@@ -314,7 +317,7 @@ def get_geo_db():
         try:
             print("Maxmind database not cached. Attempting to pull from {}".format(url))
             download_file(url, gzipfile)
-        except requests.exceptions.HTTPError:
+        except requests.ConnectionError:
             e = sys.exc_info()[0]
             print('Connection interrupted while downloading Maxmind Database: {0} - {1}'.format(url, e))
         except IOError:
@@ -379,7 +382,8 @@ def emergingthreat(url, data):
 
 
 def ipfeed(url, description, data):
-    """Builds reputation DB based on one IP per line
+    """ Builds reputation DB based on one IP per line
+    Only imports valid IPs
 
     Format is one IP per line with no further details. EG:
 
@@ -503,7 +507,7 @@ def build_db(dbtype, url, description, db_add, db_del, db_equal):
 
     try:
         download_file(url, new_filename)
-    except requests.exceptions.HTTPError as e:
+    except requests.ConnectionError as e:
         print('Connection interrupted while downloading: {0} - {1}'.format(url, e))
         # If there's a problem just keep going.
         return
@@ -614,10 +618,8 @@ def buildcef(action, entry):
             'cs1Label=Source cs1=%s cs2Label=City cs2=%s cs3Label=Country cs3=%s '
             'cfp1Label=Latitude cfp1=%.8f cfp2Label=Longitude cfp2=%.8f cfp3Label=Priority '
             'cfp3=%d cfp4Label=Reputation cfp4=%d') % (
-               timestamp, deviceHost, deviceVendor, deviceProduct, action, action, description, ip,
-               source, city, country,
-               latitude, longitude,
-               priority, reputation
+               timestamp, config.deviceHost, config.deviceVendor, config.deviceProduct, action, action,
+               description, ip, source, city, country, latitude, longitude, priority, reputation
            )
 
 
@@ -644,31 +646,40 @@ def process(db_add, db_del, db_equal):
 
     # fun toy for heatmaps later
     f = open('cache/coords.txt', 'w')
+    count_add = 0
+    count_del = 0
+    count_equal = 0
 
     for line in db_add:
+
         for i in line:
+            count_add += 1
             msg = buildcef('add', i)
             syslog(msg)
-            printjson('add', i)
+            if config.debug:
+                printjson('add', i)
             f.write("%s %s\n" % (i['latitude'], i['longitude']))
 
     for line in db_del:
         for i in line:
+            count_del += 1
             msg = buildcef('delete', i)
-            printjson('delete', i)
+            if config.debug:
+                printjson('delete', i)
             syslog(msg)
 
     for line in db_equal:
         for i in line:
+            count_equal += 1
             msg = buildcef('update', i)
             syslog(msg)
-            printjson('update', i)
+            if config.debug:
+                printjson('update', i)
             f.write("%s %s\n" % (i['latitude'], i['longitude']))
 
     f.close()
-    print(
-        "Sent {0} New, {1} deleted, and {2} unchanged entries".format(len(db_add[0]), len(db_del[0]), len(db_equal[0])))
-
+    print("Sent {0} New, {1} deleted, and {2} unchanged entries to {3}:{4}".format(
+        count_add, count_del, count_equal, config.host, config.port))
 
 # Only run code if invoked directly: This allows a user to import modules without having to run through everything
 if __name__ == "__main__":
