@@ -287,9 +287,11 @@ def syslog(message):
 
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     # We have to encode as UTF8 for non-ascii characters.
-    data = '<%d>%s' % (level + facility * 8, message.encode('utf-8'))
-    s.sendto(data.encode(), (config.host, config.port))
+
+    data = u'<%d>%s' % (level + facility * 8, message)
+    s.sendto(data.encode('utf-8'),(config.host, config.port))
     s.close()
+
 
 
 def get_geo_db():
