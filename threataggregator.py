@@ -293,7 +293,6 @@ def syslog(message):
     s.close()
 
 
-
 def get_geo_db():
     """ Finds and caches a maxmind database for GeoIP2
     from http://geolite.maxmind.com/download/geoip/database/GeoLite2-City.mmdb.gz
@@ -317,7 +316,7 @@ def get_geo_db():
     else:
 
         try:
-            print("Maxmind database not cached. Attempting to pull from {}".format(url))
+            print("Maxmind database not cached. Attempting to pull from {0}".format(url))
             download_file(url, gzipfile)
         except requests.ConnectionError:
             e = sys.exc_info()[0]
